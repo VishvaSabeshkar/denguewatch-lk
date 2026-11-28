@@ -1,0 +1,52 @@
+name: denguewatch
+
+services:
+  # 🐘 One Postgres server, two databases: airflow (Airflow's notes) + warehouse (our data)
+  postgres:
+    image: postgres:16
+    container_name: denguewatch-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-data:/var/lib/postgresql/data          # data survives restarts
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d  # runs our SQL on first start
+    ports:
+      - "127.0.0.1:5433:5432"   # reachable only from your laptop, on port 5433
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # 🌬️ Airflow 3.4 in "standalone" mode: all components in one container
+  airflow:
+    image: apache/airflow:3.4.0
+    container_name: denguewatch-airflow
+    command: standalone
+    user: "${AIRFLOW_UID:-50000}:0"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"              # no demo DAGs cluttering the UI
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Colombo
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_ALL_ADMINS: "true"  # local only: no login screen
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
+      AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: 30       # spot new DAG files every 30s
+      # Connection "dengue_db" → our warehouse database (used by DAGs later)
+      AIRFLOW_CONN_DENGUE_DB: postgresql://dengue:dengue_local@postgres:5432/warehouse
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/config:/opt/airflow/config
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy   # wait until Postgres is ready
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
