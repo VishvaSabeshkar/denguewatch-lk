@@ -42,6 +42,7 @@ services:
       - ./airflow/plugins:/opt/airflow/plugins
       - ./airflow/config:/opt/airflow/config
       - ./data:/opt/airflow/data:ro
+      - ./data/wer_pdfs:/opt/airflow/wer_pdfs
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
